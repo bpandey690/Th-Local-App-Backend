@@ -20,7 +20,7 @@ export class MarketplaceController {
   }
 
   @Post('products')
-  async addProduct(@Body() body: { shopId: string; name: string; price: number; stock: number; description?: string }) {
+  async addProduct(@Body() body: { shopId: string; name: string; price: number; stock: number; description?: string; imageUrl?: string }) {
     return this.marketplaceService.addProduct(body.shopId, body);
   }
 

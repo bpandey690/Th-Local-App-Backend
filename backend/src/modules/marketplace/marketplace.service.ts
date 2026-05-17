@@ -60,12 +60,17 @@ export class MarketplaceService implements OnModuleInit {
 
   // --- Product Methods ---
 
-  async addProduct(shopId: string, data: { name: string; price: number; stock: number; description?: string }) {
+  async addProduct(shopId: string, data: { name: string; price: number; stock: number; description?: string; imageUrl?: string }) {
     // 1. Find or create global Product entry
     let product = await this.prisma.product.findFirst({ where: { name: data.name } });
     if (!product) {
       product = await this.prisma.product.create({
-        data: { name: data.name, description: data.description }
+        data: { name: data.name, description: data.description, imageUrl: data.imageUrl }
+      });
+    } else {
+      product = await this.prisma.product.update({
+        where: { id: product.id },
+        data: { imageUrl: data.imageUrl, description: data.description || product.description }
       });
     }
 
@@ -86,6 +91,7 @@ export class MarketplaceService implements OnModuleInit {
       name: product.name,
       description: data.description || product.description,
       price: data.price,
+      imageUrl: product.imageUrl,
       shopName: shopProduct.shop.name,
     }]);
 
