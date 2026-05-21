@@ -264,4 +264,83 @@ export class MarketplaceService implements OnModuleInit {
       }
     });
   }
+
+  // --- Follow Methods ---
+
+  async getFollows(userId: string): Promise<string[]> {
+    const follows = await this.prisma.follow.findMany({
+      where: { userId },
+    });
+    return follows.map(f => f.businessId);
+  }
+
+  async toggleFollow(userId: string, businessId: string): Promise<boolean> {
+    const existing = await this.prisma.follow.findUnique({
+      where: {
+        userId_businessId: {
+          userId,
+          businessId,
+        },
+      },
+    });
+
+    if (existing) {
+      await this.prisma.follow.delete({
+        where: {
+          userId_businessId: {
+            userId,
+            businessId,
+          },
+        },
+      });
+      return false; // Unfollowed
+    } else {
+      await this.prisma.follow.create({
+        data: {
+          userId,
+          businessId,
+        },
+      });
+      return true; // Followed
+    }
+  }
+
+  // --- User Business Registry Methods ---
+
+  async getUserBusiness(userId: string): Promise<{ role: 'merchant' | 'provider' | null; brandName: string | null }> {
+    const shop = await this.prisma.shop.findFirst({
+      where: { ownerId: userId },
+    });
+    if (shop) {
+      return { role: 'merchant', brandName: shop.name };
+    }
+
+    const provider = await this.prisma.serviceProvider.findFirst({
+      where: { ownerId: userId },
+    });
+    if (provider) {
+      return { role: 'provider', brandName: provider.name };
+    }
+
+    return { role: null, brandName: null };
+  }
+
+  // --- Provider Bookings ---
+
+  async getBookingsForProvider(ownerId: string) {
+    return this.prisma.booking.findMany({
+      where: {
+        service: {
+          provider: {
+            ownerId: ownerId
+          }
+        }
+      },
+      include: {
+        service: { include: { provider: true } },
+        user: true
+      },
+      orderBy: { createdAt: 'desc' }
+    });
+  }
 }

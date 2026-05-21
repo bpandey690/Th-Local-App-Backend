@@ -126,6 +126,21 @@ export class MarketplaceGateway implements OnGatewayConnection, OnGatewayDisconn
     this.logger.log(`[WS] updateOrderStatus: Notifying customer room=${customerRoom}`);
     this.server.to(customerRoom).emit('orderStatusUpdated', order);
 
+    // Also notify merchant's shop room
+    try {
+      const firstItem = await this.prisma.orderItem.findFirst({
+        where: { orderId: data.orderId },
+        include: { shopProduct: true }
+      });
+      if (firstItem) {
+        const shopRoom = `shop_${firstItem.shopProduct.shopId}`;
+        this.logger.log(`[WS] updateOrderStatus: Notifying shop room=${shopRoom}`);
+        this.server.to(shopRoom).emit('orderStatusUpdated', order);
+      }
+    } catch (err) {
+      this.logger.error('[WS] Failed to notify shop room of status update:', err);
+    }
+
     this.logger.log(`[WS] updateOrderStatus: Done, orderId=${order.id} status=${order.status}`);
     return { event: 'orderUpdated', data: order };
   }

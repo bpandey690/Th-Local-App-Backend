@@ -236,4 +236,74 @@ export class MarketplaceController {
     }
     return this.marketplaceService.createOrder(userId, body.items);
   }
+
+  // --- Follows ---
+
+  @Get('follows')
+  async getFollows(@Query('userId') userId: string) {
+    this.logger.log(`[GET /follows] userId=${userId}`);
+    let targetUserId = userId;
+    if (!this.isValidUuid(targetUserId)) {
+      const user = await this.prisma.user.findFirst() || await this.prisma.user.create({
+        data: { name: 'Customer User', firebaseUid: 'cust-' + Date.now(), role: 'passenger' }
+      });
+      targetUserId = user.id;
+    }
+    return this.marketplaceService.getFollows(targetUserId);
+  }
+
+  @Post('follows')
+  async toggleFollow(@Body() body: { userId: string; businessId: string }) {
+    this.logger.log(`[POST /follows] userId=${body.userId} businessId=${body.businessId}`);
+    let targetUserId = body.userId;
+    if (!this.isValidUuid(targetUserId)) {
+      const user = await this.prisma.user.findFirst() || await this.prisma.user.create({
+        data: { name: 'Customer User', firebaseUid: 'cust-' + Date.now(), role: 'passenger' }
+      });
+      targetUserId = user.id;
+    }
+    const followed = await this.marketplaceService.toggleFollow(targetUserId, body.businessId);
+    return { followed };
+  }
+
+  // --- User Business Registry ---
+
+  @Get('user-business')
+  async getUserBusiness(@Query('userId') userId: string) {
+    this.logger.log(`[GET /user-business] userId=${userId}`);
+    let targetUserId = userId;
+    if (!this.isValidUuid(targetUserId)) {
+      const user = await this.prisma.user.findFirst() || await this.prisma.user.create({
+        data: { name: 'Customer User', firebaseUid: 'cust-' + Date.now(), role: 'passenger' }
+      });
+      targetUserId = user.id;
+    }
+    return this.marketplaceService.getUserBusiness(targetUserId);
+  }
+
+  // --- Update Booking Status ---
+
+  @Post('bookings/status')
+  async updateBookingStatus(@Body() body: { bookingId: string; status: string }) {
+    this.logger.log(`[POST /bookings/status] bookingId=${body.bookingId} status=${body.status}`);
+    return this.prisma.booking.update({
+      where: { id: body.bookingId },
+      data: { status: body.status }
+    });
+  }
+
+  // --- Provider assigned Bookings ---
+
+  @Get('bookings/provider')
+  async getProviderBookings(@Query('userId') userId: string) {
+    this.logger.log(`[GET /bookings/provider] userId=${userId}`);
+    let targetUserId = userId;
+    if (!this.isValidUuid(targetUserId)) {
+      const user = await this.prisma.user.findFirst() || await this.prisma.user.create({
+        data: { name: 'Customer User', firebaseUid: 'cust-' + Date.now(), role: 'passenger' }
+      });
+      targetUserId = user.id;
+    }
+    return this.marketplaceService.getBookingsForProvider(targetUserId);
+  }
 }
