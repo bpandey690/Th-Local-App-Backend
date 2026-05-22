@@ -7,6 +7,7 @@ import { AuthController } from './modules/auth/auth.controller';
 import { AliasController } from './alias.controller';
 import { MarketplaceModule } from './modules/marketplace/marketplace.module';
 import { StorageModule } from './modules/storage/storage.module';
+import { ParkingModule } from './modules/parking/parking.module';
 
 @Module({
   imports: [
@@ -16,6 +17,7 @@ import { StorageModule } from './modules/storage/storage.module';
     MatchmakingModule,
     MarketplaceModule,
     StorageModule,
+    ParkingModule,
   ],
   controllers: [AuthController, AliasController],
 })

@@ -96,6 +96,10 @@ model User {
   cart          Cart?
   orders        Order[]
   follows       Follow[]
+
+  // Parking relations
+  parkingSpots    ParkingSpot[]    @relation("OwnerParkingSpots")
+  parkingBookings ParkingBooking[] @relation("UserParkingBookings")
 }
 
 model Message {
@@ -254,3 +258,71 @@ model Follow {
   @@unique([userId, businessId])
 }
 
+// ==========================================
+// Parking Reservation System Models
+// ==========================================
+
+enum ParkingSlotType {
+  HOURLY
+  DAILY
+  WEEKLY
+  MONTHLY
+}
+
+enum BookingStatus {
+  REQUESTED
+  ACCEPTED
+  REJECTED
+  CANCELLED
+}
+
+model ParkingSpot {
+  id             String                @id @default(uuid())
+  spotName       String                @unique
+  level          Int                   // 1 to 5
+  section        String                // "LEFT", "MIDDLE", "RIGHT"
+  row            Int                   // 1 to 3
+  col            Int                   // 1 to 4
+  ownerId        String?
+  owner          User?                 @relation("OwnerParkingSpots", fields: [ownerId], references: [id], onDelete: SetNull)
+  approved       Boolean               @default(false)
+  createdAt      DateTime              @default(now())
+  updatedAt      DateTime              @updatedAt
+
+  availabilities ParkingAvailability[]
+  bookings       ParkingBooking[]
+}
+
+model ParkingAvailability {
+  id             String          @id @default(uuid())
+  spotId         String
+  spot           ParkingSpot     @relation(fields: [spotId], references: [id], onDelete: Cascade)
+  date           String          // e.g. "2026-05-22"
+  slotType       ParkingSlotType @default(HOURLY)
+  startTime      DateTime
+  endTime        DateTime
+  price          Float
+  isBooked       Boolean         @default(false)
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  bookings       ParkingBooking[]
+}
+
+model ParkingBooking {
+  id             String              @id @default(uuid())
+  spotId         String
+  spot           ParkingSpot         @relation(fields: [spotId], references: [id], onDelete: Cascade)
+  availabilityId String?
+  availability   ParkingAvailability? @relation(fields: [availabilityId], references: [id], onDelete: SetNull)
+  userId         String
+  user           User                @relation("UserParkingBookings", fields: [userId], references: [id], onDelete: Cascade)
+  date           String              // "2026-05-22"
+  slotType       ParkingSlotType
+  startTime      DateTime
+  endTime        DateTime
+  price          Float
+  status         BookingStatus       @default(REQUESTED)
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+}
