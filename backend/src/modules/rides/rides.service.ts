@@ -61,6 +61,15 @@ export class RidesService {
     const id = randomUUID();
     const now = new Date();
 
+    const userVehicle = await this.prisma.vehicle.findUnique({
+      where: { userId: driverId }
+    });
+
+    const vehicleType = dto.vehicleType || userVehicle?.type || 'CAR';
+    const vehicleCapacity = dto.vehicleCapacity || userVehicle?.capacity || 5;
+    const fuelType = dto.fuelType || userVehicle?.fuelType || 'Petrol';
+    const vehicleNumber = dto.vehicleNumber || userVehicle?.vehicleNumber || '';
+
     const rows = await this.prisma.$queryRaw<
       Array<{
         id: string;
@@ -80,12 +89,13 @@ export class RidesService {
       }>
     >(Prisma.sql`
       INSERT INTO "Ride"
-        ("id", "updatedAt", "driverId","seatsAvailable","chargeCents","startTime","endTime","startPlaceName","endPlaceName","status","startPoint","endPoint","routeLine")
+        ("id", "updatedAt", "driverId","seatsAvailable","chargeCents","startTime","endTime","startPlaceName","endPlaceName","status","startPoint","endPoint","routeLine","vehicleType","vehicleCapacity","fuelType","vehicleNumber")
       VALUES
         (${id}, ${now}, ${driverId}, ${dto.seatsAvailable}, ${dto.chargeCents}, ${startTime}, ${endTime}, ${dto.startPlaceName}, ${dto.endPlaceName}, ${RideStatus.OPEN}::"RideStatus",
          ST_SetSRID(ST_GeomFromText(${startWkt}), 4326),
          ST_SetSRID(ST_GeomFromText(${endWkt}), 4326),
-         ST_SetSRID(ST_GeomFromText(${routeWkt}), 4326)
+         ST_SetSRID(ST_GeomFromText(${routeWkt}), 4326),
+         ${vehicleType}, ${vehicleCapacity}, ${fuelType}, ${vehicleNumber}
         )
       RETURNING
         "id","createdAt","updatedAt","driverId","seatsAvailable","chargeCents","startTime","endTime","startPlaceName","endPlaceName","status",
@@ -162,7 +172,8 @@ export class RidesService {
         r."startPlaceName", r."endPlaceName", r."status",
         ST_AsGeoJSON(r."startPoint") as "startPointGeoJson",
         ST_AsGeoJSON(r."endPoint") as "endPointGeoJson",
-        ST_AsGeoJSON(r."routeLine") as "routeGeoJson"
+        ST_AsGeoJSON(r."routeLine") as "routeGeoJson",
+        r."vehicleType", r."vehicleCapacity", r."fuelType", r."vehicleNumber"
       FROM "Ride" r
       JOIN "User" u ON r."driverId" = u."id"
       WHERE r."id" = ${id}
@@ -182,6 +193,7 @@ export class RidesService {
       rider_avatar: (rr.rider as any)?.profilePic || null,
       status: rr.status,
       chat_id: `chat_${rr.id}`,
+      fareCents: rr.fareCents,
     }));
 
     if (userId && userId !== ride.driverId) {
@@ -192,6 +204,7 @@ export class RidesService {
         (ride as any).my_request_id = myRequest.id;
         (ride as any).my_request_status = myRequest.status;
         (ride as any).my_chat_id = `chat_${myRequest.id}`;
+        (ride as any).my_fare_cents = myRequest.fareCents;
       }
     }
 
@@ -289,16 +302,29 @@ export class RidesService {
     });
     if (overlappingRider) throw new BadRequestException('You already have a requested ride during this time window.');
 
+    const userVehicle = await this.prisma.vehicle.findUnique({
+      where: { userId }
+    });
+
+    const vehicleType = userVehicle?.type || 'CAR';
+    const vehicleCapacity = userVehicle?.capacity || 5;
+    const fuelType = userVehicle?.fuelType || 'Petrol';
+    const vehicleNumber = userVehicle?.vehicleNumber || '';
+
     const ride = await this.prisma.ride.create({
       data: {
         driverId: userId,
-        seatsAvailable: seats || 3,
+        seatsAvailable: seats || vehicleCapacity || 3,
         chargeCents: (price || 10) * 100,
         startTime: startTime.toISOString(),
         endTime: endTime.toISOString(),
         startPlaceName: startName,
         endPlaceName: endName,
         status: RideStatus.OPEN,
+        vehicleType,
+        vehicleCapacity,
+        fuelType,
+        vehicleNumber,
       }
     });
 
@@ -310,18 +336,46 @@ export class RidesService {
             "routeLine" = ST_SetSRID(ST_MakeLine(ST_MakePoint(${startCoords[0]}, ${startCoords[1]}), ST_MakePoint(${endCoords[0]}, ${endCoords[1]})), 4326)
         WHERE id = ${ride.id}
       `);
+
+      // Update the chargeCents using the calculated PostGIS distance!
+      const distanceRow = await this.prisma.$queryRaw<Array<{ distance: number }>>(Prisma.sql`
+        SELECT ST_Distance("startPoint"::geography, "endPoint"::geography) as distance
+        FROM "Ride"
+        WHERE id = ${ride.id}
+      `);
+      const distanceMeters = distanceRow[0]?.distance || 0;
+      
+      const { calculateFare } = require('../../common/utils/pricing');
+      const fareInfo = calculateFare({
+        distanceMeters,
+        deviationMeters: 0,
+        startPlaceName: startName,
+        endPlaceName: endName,
+        vehicleType,
+        vehicleCapacity,
+        fuelType
+      });
+
+      await this.prisma.ride.update({
+        where: { id: ride.id },
+        data: {
+          chargeCents: fareInfo.finalFare * 100
+        }
+      });
     }
 
     return ride;
   }
 
-  async bookRide(id: string, userId: string) {
+  async bookRide(id: string, userId: string, body?: any) {
     const ride = await this.prisma.ride.findUnique({ where: { id } });
     if (!ride) throw new NotFoundException('Ride not found');
 
     if (ride.driverId === userId) {
       throw new BadRequestException('Cannot book your own ride');
     }
+
+    const { riderStartName, riderEndName, riderStartCoords, riderEndCoords, riderStartTime } = body || {};
 
     const overlappingDriver = await this.prisma.ride.findFirst({
        where: {
@@ -345,18 +399,82 @@ export class RidesService {
     });
     if (overlappingRider) throw new BadRequestException('You already have a requested ride overlapping with this time window.');
 
+    let distanceMeters = 0;
+    let deviationMeters = 0;
+
+    if (riderStartCoords && riderStartCoords.length === 2 && riderEndCoords && riderEndCoords.length === 2) {
+      const wktStart = `POINT(${riderStartCoords[0]} ${riderStartCoords[1]})`;
+      const wktEnd = `POINT(${riderEndCoords[0]} ${riderEndCoords[1]})`;
+      
+      const geoResult = await this.prisma.$queryRaw<
+        Array<{ distance: number; deviation: number }>
+      >(Prisma.sql`
+        SELECT 
+          ST_Distance(ST_SetSRID(ST_GeomFromText(${wktStart}), 4326)::geography, ST_SetSRID(ST_GeomFromText(${wktEnd}), 4326)::geography) as distance,
+          (ST_Distance("routeLine"::geography, ST_SetSRID(ST_GeomFromText(${wktStart}), 4326)::geography) + 
+           ST_Distance("routeLine"::geography, ST_SetSRID(ST_GeomFromText(${wktEnd}), 4326)::geography)) as deviation
+        FROM "Ride"
+        WHERE id = ${id}
+      `);
+
+      distanceMeters = geoResult[0]?.distance || 0;
+      deviationMeters = geoResult[0]?.deviation || 0;
+    } else {
+      // Fallback: use full route distance from the ride
+      const geoResult = await this.prisma.$queryRaw<
+        Array<{ distance: number }>
+      >(Prisma.sql`
+        SELECT ST_Distance("startPoint"::geography, "endPoint"::geography) as distance
+        FROM "Ride"
+        WHERE id = ${id}
+      `);
+      distanceMeters = geoResult[0]?.distance || 0;
+      deviationMeters = 0;
+    }
+
+    const { calculateFare } = require('../../common/utils/pricing');
+    const fareInfo = calculateFare({
+      distanceMeters,
+      deviationMeters,
+      startPlaceName: riderStartName || ride.startPlaceName,
+      endPlaceName: riderEndName || ride.endPlaceName,
+      vehicleType: (ride as any).vehicleType || 'CAR',
+      vehicleCapacity: (ride as any).vehicleCapacity || 5,
+      fuelType: (ride as any).fuelType || 'Petrol'
+    });
+
+    const calculatedFareCents = fareInfo.finalFare * 100;
+
     const requestId = await this.prisma.rideRequest.create({
       data: {
         rideId: id,
         riderId: userId,
-        riderStartName: ride.startPlaceName,
-        riderEndName: ride.endPlaceName,
-        riderStartTime: ride.startTime,
-        status: RideStatus.REQUESTED
+        riderStartName: riderStartName || ride.startPlaceName,
+        riderEndName: riderEndName || ride.endPlaceName,
+        riderStartTime: riderStartTime ? new Date(riderStartTime) : ride.startTime,
+        status: RideStatus.REQUESTED,
+        fareCents: calculatedFareCents
       },
       include: {
         rider: true,
       }
+    });
+
+    if (riderStartCoords && riderStartCoords.length === 2 && riderEndCoords && riderEndCoords.length === 2) {
+      const wktStart = `POINT(${riderStartCoords[0]} ${riderStartCoords[1]})`;
+      const wktEnd = `POINT(${riderEndCoords[0]} ${riderEndCoords[1]})`;
+      await this.prisma.$executeRaw(Prisma.sql`
+        UPDATE "RideRequest"
+        SET "riderStart" = ST_SetSRID(ST_GeomFromText(${wktStart}), 4326),
+            "riderEnd" = ST_SetSRID(ST_GeomFromText(${wktEnd}), 4326)
+        WHERE id = ${requestId.id}
+      `);
+    }
+
+    // Mark ride requested (simple phase-1 state machine)
+    await this.prisma.ride.update({
+      where: { id },
+      data: { status: RideStatus.REQUESTED }
     });
 
     this.chatService.notifyUserWs(ride.driverId, 'new_ride_request', {
@@ -366,7 +484,8 @@ export class RidesService {
       riderStartName: requestId.riderStartName,
       riderEndName: requestId.riderEndName,
       riderStartTime: requestId.riderStartTime,
-      status: requestId.status
+      status: requestId.status,
+      fareCents: calculatedFareCents
     });
 
     return { ok: true, chat_id: `chat_${requestId.id}` };

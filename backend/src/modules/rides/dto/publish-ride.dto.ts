@@ -6,6 +6,7 @@ import {
   IsInt,
   IsNotEmpty,
   IsNumber,
+  IsOptional,
   IsString,
   Min,
   ValidateNested,
@@ -31,6 +32,22 @@ export class PublishRideDto {
   @IsInt()
   @Min(1)
   seatsAvailable!: number;
+
+  @IsOptional()
+  @IsString()
+  fuelType?: string;
+
+  @IsOptional()
+  @IsString()
+  vehicleType?: string;
+
+  @IsOptional()
+  @IsInt()
+  vehicleCapacity?: number;
+
+  @IsOptional()
+  @IsString()
+  vehicleNumber?: string;
 
   @IsDateString()
   startTime!: string;

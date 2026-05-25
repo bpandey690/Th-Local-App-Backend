@@ -109,6 +109,10 @@ export class MatchmakingService {
         r."status",
         ST_AsGeoJSON(r."startPoint") AS "startPointGeoJson",
         ST_AsGeoJSON(r."endPoint") AS "endPointGeoJson",
+        r."vehicleType",
+        r."vehicleCapacity",
+        r."fuelType",
+        r."vehicleNumber",
         (r."startTime" + (EXTRACT(EPOCH FROM (r."endTime" - r."startTime")) * ST_LineLocatePoint(r."routeLine", rider.rider_start_g::geometry)) * INTERVAL '1 second') AS "estimatedPickupTime",
         ABS(EXTRACT(EPOCH FROM (
           (r."startTime" + (EXTRACT(EPOCH FROM (r."endTime" - r."startTime")) * ST_LineLocatePoint(r."routeLine", rider.rider_start_g::geometry)) * INTERVAL '1 second')
@@ -117,6 +121,7 @@ export class MatchmakingService {
         ST_Distance(r."routeLine"::geography, rider.rider_start_g) AS "startDistanceMeters",
         ST_Distance(r."routeLine"::geography, rider.rider_end_g) AS "endDistanceMeters",
         ST_Distance(r."routeLine"::geography, rider.rider_line_g) AS "corridorDistanceMeters",
+        ST_Distance(rider.rider_start_g, rider.rider_end_g) AS "riderDistanceMeters",
         (
           ABS(EXTRACT(EPOCH FROM (
             (r."startTime" + (EXTRACT(EPOCH FROM (r."endTime" - r."startTime")) * ST_LineLocatePoint(r."routeLine", rider.rider_start_g::geometry)) * INTERVAL '1 second')
@@ -144,6 +149,24 @@ export class MatchmakingService {
       LIMIT 50
     `);
 
+    const { calculateFare } = require('../../common/utils/pricing');
+    const matches = rows.map((row) => {
+      const fareInfo = calculateFare({
+        distanceMeters: Number((row as any).riderDistanceMeters) || 0,
+        deviationMeters: (Number(row.startDistanceMeters) || 0) + (Number(row.endDistanceMeters) || 0),
+        startPlaceName: dto.startPlaceName || row.startPlaceName,
+        endPlaceName: dto.endPlaceName || row.endPlaceName,
+        vehicleType: (row as any).vehicleType || 'CAR',
+        vehicleCapacity: (row as any).vehicleCapacity || 5,
+        fuelType: (row as any).fuelType || 'Petrol'
+      });
+
+      return {
+        ...row,
+        estimatedFare: fareInfo
+      };
+    });
+
     return {
       query: {
         start: dto.start,
@@ -154,7 +177,7 @@ export class MatchmakingService {
         corridorMeters,
         timeWindowMinutes,
       },
-      matches: rows,
+      matches,
     };
   }
 

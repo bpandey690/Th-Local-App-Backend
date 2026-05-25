@@ -41,6 +41,6 @@ export class RidesController {
 
   @Post(':id/book')
   async bookRide(@Param('id') id: string, @Body() body: any, @Request() req: any) {
-    return this.rides.bookRide(id, req.user.id);
+    return this.rides.bookRide(id, req.user.id, body);
   }
 }

@@ -11,7 +11,10 @@ const JWT_SECRET = process.env.JWT_SECRET || 'fallback_secret_key_123';
 export class AuthController {
   constructor(private readonly prisma: PrismaService) {}
   
-  private formatUser(user: any) {
+  private async formatUser(user: any) {
+    const vehicle = await this.prisma.vehicle.findUnique({
+      where: { userId: user.id }
+    });
     return {
       ...user,
       rating: 5.0,
@@ -20,6 +23,7 @@ export class AuthController {
       money_saved: 0,
       is_verified: true,
       avatar_url: user.profilePic || null,
+      vehicle: vehicle || null,
     };
   }
 
@@ -47,7 +51,7 @@ export class AuthController {
     console.log(`[AUTH] User created successfully. ID: ${user.id}`);
 
     const token = jwt.sign({ sub: user.id, email: user.email }, JWT_SECRET, { expiresIn: '30d' });
-    return { access_token: token, user: this.formatUser(user) };
+    return { access_token: token, user: await this.formatUser(user) };
   }
 
   @Post('login')
@@ -64,12 +68,44 @@ export class AuthController {
     if (!isValid) throw new UnauthorizedException('Invalid email or password');
 
     const token = jwt.sign({ sub: user.id, email: user.email }, JWT_SECRET, { expiresIn: '30d' });
-    return { access_token: token, user: this.formatUser(user) };
+    return { access_token: token, user: await this.formatUser(user) };
   }
 
   @Get('me')
   @UseGuards(FirebaseAuthGuard)
   async getMe(@Request() req: any) {
-    return this.formatUser(req.user);
+    return await this.formatUser(req.user);
+  }
+
+  @Post('vehicle')
+  @UseGuards(FirebaseAuthGuard)
+  async saveVehicle(@Request() req: any, @Body() body: any) {
+    const { vehicleNumber, type, capacity, fuelType } = body;
+    const vehicle = await this.prisma.vehicle.upsert({
+      where: { userId: req.user.id },
+      create: {
+        userId: req.user.id,
+        vehicleNumber,
+        type: type?.toUpperCase() || 'CAR',
+        capacity: Number(capacity) || 5,
+        fuelType: fuelType || 'Petrol',
+      },
+      update: {
+        vehicleNumber,
+        type: type?.toUpperCase() || 'CAR',
+        capacity: Number(capacity) || 5,
+        fuelType: fuelType || 'Petrol',
+      }
+    });
+    return vehicle;
+  }
+
+  @Get('vehicle')
+  @UseGuards(FirebaseAuthGuard)
+  async getVehicle(@Request() req: any) {
+    const vehicle = await this.prisma.vehicle.findUnique({
+      where: { userId: req.user.id }
+    });
+    return vehicle;
   }
 }

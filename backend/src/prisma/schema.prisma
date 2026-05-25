@@ -40,6 +40,11 @@ model Ride {
 
   status            RideStatus @default(OPEN)
 
+  vehicleType       String     @default("CAR")
+  vehicleCapacity   Int        @default(5)
+  fuelType          String     @default("Petrol")
+  vehicleNumber     String     @default("")
+
   requests          RideRequest[]
 
   @@index([startTime])
@@ -64,6 +69,7 @@ model RideRequest {
   riderEnd       Unsupported("geometry(Point,4326)")?
 
   status         RideStatus @default(REQUESTED)
+  fareCents      Int        @default(1000)
 
   @@index([rideId])
 }
@@ -100,6 +106,8 @@ model User {
   // Parking relations
   parkingSpots    ParkingSpot[]    @relation("OwnerParkingSpots")
   parkingBookings ParkingBooking[] @relation("UserParkingBookings")
+
+  vehicle       Vehicle?
 }
 
 model Message {
@@ -325,4 +333,18 @@ model ParkingBooking {
   status         BookingStatus       @default(REQUESTED)
   createdAt      DateTime            @default(now())
   updatedAt      DateTime            @updatedAt
+}
+
+model Vehicle {
+  id            String   @id @default(uuid())
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  userId        String   @unique
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  vehicleNumber String
+  type          String   // "CAR" | "BIKE"
+  capacity      Int      // 2 | 5 | 7
+  fuelType      String   // "CNG" | "Petrol" | "Diesel"
 }
