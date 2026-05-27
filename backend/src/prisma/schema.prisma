@@ -348,3 +348,13 @@ model Vehicle {
   capacity      Int      // 2 | 5 | 7
   fuelType      String   // "CNG" | "Petrol" | "Diesel"
 }
+
+model VerificationCode {
+  id          String   @id @default(uuid())
+  phoneNumber String
+  code        String
+  expiresAt   DateTime
+  createdAt   DateTime @default(now())
+
+  @@index([phoneNumber])
+}

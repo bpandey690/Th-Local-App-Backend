@@ -4,12 +4,16 @@ import * as jwt from 'jsonwebtoken';
 import { randomUUID } from 'crypto';
 import { FirebaseAuthGuard } from './firebase-auth.guard';
 import { PrismaService } from '../prisma/prisma.service';
+import { SmsService } from './sms.service';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'fallback_secret_key_123';
 
 @Controller('auth')
 export class AuthController {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly smsService: SmsService,
+  ) {}
   
   private async formatUser(user: any) {
     const vehicle = await this.prisma.vehicle.findUnique({
@@ -107,5 +111,171 @@ export class AuthController {
       where: { userId: req.user.id }
     });
     return vehicle;
+  }
+
+  @Post('otp/send')
+  async sendOtp(@Body() body: { phoneNumber: string }) {
+    const { phoneNumber } = body;
+    if (!phoneNumber) {
+      throw new UnauthorizedException('Phone number is required');
+    }
+
+    const cleanPhone = phoneNumber.trim();
+
+    // Generate random 6-digit verification code
+    const code = this.smsService.generateOtpCode();
+    const expiresAt = new Date(Date.now() + 5 * 60 * 1000); // 5 minutes expiration
+
+    console.log(`[OTP] Generating verification code ${code} for phone: ${cleanPhone}...`);
+
+    // Save OTP transaction in VerificationCode table
+    await this.prisma.verificationCode.create({
+      data: {
+        phoneNumber: cleanPhone,
+        code,
+        expiresAt,
+      },
+    });
+
+    // Send the SMS (either Twilio or dev log)
+    const success = await this.smsService.sendOtp(cleanPhone, code);
+    if (!success) {
+      throw new UnauthorizedException('Failed to dispatch SMS verification code');
+    }
+
+    return { success: true, message: 'OTP verification code successfully dispatched' };
+  }
+
+  @Post('otp/verify')
+  async verifyOtp(@Body() body: { phoneNumber: string; code: string }) {
+    const { phoneNumber, code } = body;
+    if (!phoneNumber || !code) {
+      throw new UnauthorizedException('Phone number and verification code are required');
+    }
+
+    const cleanPhone = phoneNumber.trim();
+    const cleanCode = code.trim();
+
+    console.log(`[OTP] Verifying code ${cleanCode} for phone: ${cleanPhone}...`);
+
+    // Verify code exists, matches, and has not expired
+    const record = await this.prisma.verificationCode.findFirst({
+      where: {
+        phoneNumber: cleanPhone,
+        code: cleanCode,
+        expiresAt: { gte: new Date() },
+      },
+      orderBy: { createdAt: 'desc' }, // Get latest request first
+    });
+
+    if (!record) {
+      throw new UnauthorizedException('Invalid or expired OTP verification code');
+    }
+
+    // Clean up code to prevent replay attacks
+    await this.prisma.verificationCode.deleteMany({
+      where: { phoneNumber: cleanPhone },
+    });
+
+    // Get or Create user
+    let user = await this.prisma.user.findUnique({
+      where: { phoneNumber: cleanPhone },
+    });
+
+    if (!user) {
+      console.log(`[OTP] User not found for ${cleanPhone}. Automatically registering passenger profile...`);
+      const mockFirebaseUid = `phone_${randomUUID()}`;
+      
+      user = await this.prisma.user.create({
+        data: {
+          phoneNumber: cleanPhone,
+          name: `GoPooler ${cleanPhone.slice(-4)}`,
+          role: 'passenger',
+          firebaseUid: mockFirebaseUid,
+        },
+      });
+    }
+
+    // Generate local access JWT
+    const token = jwt.sign(
+      { sub: user.id, phoneNumber: user.phoneNumber },
+      JWT_SECRET,
+      { expiresIn: '30d' },
+    );
+
+    return {
+      access_token: token,
+      user: await this.formatUser(user),
+    };
+  }
+
+  @Post('google')
+  async loginWithGoogleBody(@Body() body: { idToken: string; email?: string; name?: string; profilePic?: string }) {
+    const { idToken, email, name, profilePic } = body;
+    if (!idToken) {
+      throw new UnauthorizedException('Google ID token is required');
+    }
+
+    console.log(`[AUTH] Google Sign-In request received...`);
+
+    let user: any = null;
+
+    // Local sandbox dev testing
+    if (idToken === 'local_google_mock_id_token_123456') {
+      console.log(`[AUTH] Local Mock Google login matched. Syncing profile: ${email || 'sarah.google@gmail.com'}`);
+      
+      const mockEmail = email || 'sarah.google@gmail.com';
+      const mockName = name || 'Sarah Google';
+      const mockPic = profilePic || 'https://images.unsplash.com/photo-1494790108377-be9c29b29330';
+
+      user = await this.prisma.user.findUnique({ where: { email: mockEmail } });
+      if (!user) {
+        const mockFirebaseUid = `google_${randomUUID()}`;
+        user = await this.prisma.user.create({
+          data: {
+            email: mockEmail,
+            name: mockName,
+            profilePic: mockPic,
+            firebaseUid: mockFirebaseUid,
+            role: 'passenger',
+          },
+        });
+      }
+    } else {
+      // Live Firebase validation
+      try {
+        const decodedToken = await admin.auth().verifyIdToken(idToken);
+        user = await this.prisma.user.findUnique({
+          where: { firebaseUid: decodedToken.uid },
+        });
+
+        if (!user) {
+          user = await this.prisma.user.create({
+            data: {
+              firebaseUid: decodedToken.uid,
+              email: decodedToken.email || null,
+              phoneNumber: decodedToken.phone_number || null,
+              name: decodedToken.name || decodedToken.phone_number || 'Carpool User',
+              profilePic: decodedToken.picture || null,
+            },
+          });
+        }
+      } catch (err: any) {
+        console.error('[AUTH] Firebase Google Token verify exception:', err?.message || err);
+        throw new UnauthorizedException('Invalid Google authentication credentials');
+      }
+    }
+
+    // Issue local session token
+    const token = jwt.sign(
+      { sub: user.id, email: user.email },
+      JWT_SECRET,
+      { expiresIn: '30d' },
+    );
+
+    return {
+      access_token: token,
+      user: await this.formatUser(user),
+    };
   }
 }
