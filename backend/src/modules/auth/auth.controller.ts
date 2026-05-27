@@ -5,6 +5,7 @@ import { randomUUID } from 'crypto';
 import { FirebaseAuthGuard } from './firebase-auth.guard';
 import { PrismaService } from '../prisma/prisma.service';
 import { SmsService } from './sms.service';
+import * as admin from 'firebase-admin';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'fallback_secret_key_123';
 
