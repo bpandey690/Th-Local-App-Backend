@@ -371,4 +371,34 @@ export class ParkingService implements OnModuleInit {
       return bk;
     });
   }
+
+  // Update a parking spot's persistent default rates
+  async updateSpotPrices(
+    userId: string,
+    spotId: string,
+    prices: {
+      priceHourly: number;
+      priceDaily: number;
+      priceWeekly: number;
+      priceMonthly: number;
+    },
+  ) {
+    const spot = await this.prisma.parkingSpot.findUnique({
+      where: { id: spotId },
+    });
+
+    if (!spot || spot.ownerId !== userId) {
+      throw new BadRequestException('You do not own this spot or it does not exist.');
+    }
+
+    return this.prisma.parkingSpot.update({
+      where: { id: spotId },
+      data: {
+        priceHourly: Number(prices.priceHourly),
+        priceDaily: Number(prices.priceDaily),
+        priceWeekly: Number(prices.priceWeekly),
+        priceMonthly: Number(prices.priceMonthly),
+      },
+    });
+  }
 }

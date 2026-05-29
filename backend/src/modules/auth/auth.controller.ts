@@ -1,4 +1,4 @@
-import { Controller, Post, Body, UnauthorizedException, Get, Request, UseGuards } from '@nestjs/common';
+import { Controller, Post, Body, UnauthorizedException, Get, Request, UseGuards, Patch } from '@nestjs/common';
 import * as bcrypt from 'bcryptjs';
 import * as jwt from 'jsonwebtoken';
 import { randomUUID } from 'crypto';
@@ -278,5 +278,24 @@ export class AuthController {
       access_token: token,
       user: await this.formatUser(user),
     };
+  }
+
+  @Patch('profile')
+  @UseGuards(FirebaseAuthGuard)
+  async updateProfile(@Request() req: any, @Body() body: any) {
+    const { name, phoneNumber, avatarUrl, profilePic, gender } = body;
+    console.log(`[AUTH] Updating profile for user ${req.user.id}:`, body);
+
+    const updatedUser = await this.prisma.user.update({
+      where: { id: req.user.id },
+      data: {
+        name: name !== undefined ? name : undefined,
+        phoneNumber: phoneNumber !== undefined ? phoneNumber : undefined,
+        profilePic: (avatarUrl || profilePic) !== undefined ? (avatarUrl || profilePic) : undefined,
+        gender: gender !== undefined ? gender : undefined,
+      }
+    });
+
+    return await this.formatUser(updatedUser);
   }
 }

@@ -91,4 +91,20 @@ export class ParkingController {
   async getMyBookings(@Request() req) {
     return this.parkingService.getMyBookings(req.user.id);
   }
+
+  // Update a parking spot's default prices
+  @Patch('my-spots/:id/prices')
+  async updateSpotPrices(
+    @Request() req,
+    @Param('id') spotId: string,
+    @Body()
+    body: {
+      priceHourly: number;
+      priceDaily: number;
+      priceWeekly: number;
+      priceMonthly: number;
+    },
+  ) {
+    return this.parkingService.updateSpotPrices(req.user.id, spotId, body);
+  }
 }

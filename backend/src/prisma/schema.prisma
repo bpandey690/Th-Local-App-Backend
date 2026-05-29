@@ -83,6 +83,7 @@ model User {
   profilePic    String?
   passwordHash  String?
   role          String        @default("passenger")
+  gender        String?
 
   createdAt     DateTime      @default(now())
   updatedAt     DateTime      @updatedAt
@@ -294,6 +295,10 @@ model ParkingSpot {
   ownerId        String?
   owner          User?                 @relation("OwnerParkingSpots", fields: [ownerId], references: [id], onDelete: SetNull)
   approved       Boolean               @default(false)
+  priceHourly    Float                 @default(50)
+  priceDaily     Float                 @default(100)
+  priceWeekly     Float                 @default(500)
+  priceMonthly   Float                 @default(1000)
   createdAt      DateTime              @default(now())
   updatedAt      DateTime              @updatedAt
 
