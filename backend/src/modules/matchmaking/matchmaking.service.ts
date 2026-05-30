@@ -50,9 +50,9 @@ export class MatchmakingService {
       throw new BadRequestException('You already have a requested ride during this pickup time.');
     }
 
-    const startRadiusMeters = dto.startRadiusMeters ?? 1200;
-    const endRadiusMeters = dto.endRadiusMeters ?? 1200;
-    const corridorMeters = dto.corridorMeters ?? 1500;
+    const startRadiusMeters = dto.startRadiusMeters ?? 3000;
+    const endRadiusMeters = dto.endRadiusMeters ?? 3000;
+    const corridorMeters = dto.corridorMeters ?? 3000;
     const timeWindowMinutes = dto.timeWindowMinutes ?? 30;
 
     const startWkt = pointWkt(dto.start);
