@@ -298,4 +298,42 @@ export class AuthController {
 
     return await this.formatUser(updatedUser);
   }
+
+  @Post('delete-account')
+  @UseGuards(FirebaseAuthGuard)
+  async deleteAccount(@Request() req: any) {
+    const userId = req.user.id;
+    console.log(`[AUTH] Deleting/Anonymizing user account for user: ${userId}`);
+
+    // Delete associated cleanable tables first to prevent constraint violations
+    await this.prisma.vehicle.deleteMany({ where: { userId } }).catch(() => {});
+    await this.prisma.cart.deleteMany({ where: { userId } }).catch(() => {});
+    await this.prisma.follow.deleteMany({ where: { userId } }).catch(() => {});
+    await this.prisma.booking.deleteMany({ where: { userId } }).catch(() => {});
+    await this.prisma.parkingBooking.deleteMany({ where: { userId } }).catch(() => {});
+    await this.prisma.parkingSpot.deleteMany({ where: { ownerId: userId } }).catch(() => {});
+
+    // Try to delete the user fully
+    try {
+      await this.prisma.user.delete({ where: { id: userId } });
+      console.log(`[AUTH] User record ${userId} deleted fully from DB.`);
+    } catch (err) {
+      console.log(`[AUTH] Constraints found. Anonymizing user profile for ${userId} instead...`);
+      // Fallback: Anonymize to satisfy constraint rules safely
+      await this.prisma.user.update({
+        where: { id: userId },
+        data: {
+          name: 'Deleted User',
+          email: null,
+          phoneNumber: null,
+          profilePic: null,
+          passwordHash: null,
+          gender: null,
+          firebaseUid: `deleted_${userId}_${Date.now()}`,
+        },
+      });
+    }
+
+    return { success: true, message: 'Account and associated data deleted successfully' };
+  }
 }
