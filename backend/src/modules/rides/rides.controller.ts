@@ -27,8 +27,14 @@ export class RidesController {
   }
 
   @Get('my')
-  async getMyRides(@Request() req: any) {
-    return this.rides.getMyRides(req.user.id);
+  async getMyRides(
+    @Request() req: any,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ) {
+    const pageNum = page ? parseInt(page, 10) : undefined;
+    const limitNum = limit ? parseInt(limit, 10) : undefined;
+    return this.rides.getMyRides(req.user.id, pageNum, limitNum);
   }
 
   @Post('offer')

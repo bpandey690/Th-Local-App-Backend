@@ -233,7 +233,7 @@ export class RidesService {
     return updated;
   }
 
-  async getMyRides(userId: string) {
+  async getMyRides(userId: string, page?: number, limit?: number) {
     const driverRides = await this.prisma.ride.findMany({ 
       where: { driverId: userId },
       include: { 
@@ -283,7 +283,34 @@ export class RidesService {
     upcoming.sort((a, b) => new Date(a.departure_time).getTime() - new Date(b.departure_time).getTime());
     past.sort((a, b) => new Date(b.departure_time).getTime() - new Date(a.departure_time).getTime());
 
-    return { upcoming, past, requested };
+    const totalUpcoming = upcoming.length;
+    const totalPast = past.length;
+    const totalRequested = requested.length;
+
+    let paginatedUpcoming = upcoming;
+    let paginatedPast = past;
+    let paginatedRequested = requested;
+
+    if (limit && limit > 0) {
+      const p = page || 1;
+      const start = (p - 1) * limit;
+      const end = p * limit;
+      paginatedUpcoming = upcoming.slice(start, end);
+      paginatedPast = past.slice(start, end);
+      paginatedRequested = requested.slice(start, end);
+    }
+
+    return {
+      upcoming: paginatedUpcoming,
+      past: paginatedPast,
+      requested: paginatedRequested,
+      hasMoreUpcoming: limit ? totalUpcoming > (page || 1) * limit : false,
+      hasMorePast: limit ? totalPast > (page || 1) * limit : false,
+      hasMoreRequested: limit ? totalRequested > (page || 1) * limit : false,
+      totalUpcomingCount: totalUpcoming,
+      totalPastCount: totalPast,
+      totalRequestedCount: totalRequested,
+    };
   }
 
   async offerRide(body: any, userId: string) {
