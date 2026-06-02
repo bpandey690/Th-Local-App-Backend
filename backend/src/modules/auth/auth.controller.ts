@@ -20,12 +20,22 @@ export class AuthController {
     const vehicle = await this.prisma.vehicle.findUnique({
       where: { userId: user.id }
     });
+
+    const ridesAsDriver = await this.prisma.ride.findMany({ where: { driverId: user.id } });
+    const requestsAsRider = await this.prisma.rideRequest.findMany({ 
+      where: { riderId: user.id, status: 'ACCEPTED' as any }
+    });
+
+    const ridesCount = ridesAsDriver.length + requestsAsRider.length;
+    const co2Saved = ridesCount * 2.5;
+    const moneySaved = ridesCount * 15.0;
+
     return {
       ...user,
       rating: 5.0,
-      rides_count: 0,
-      co2_saved_kg: 0,
-      money_saved: 0,
+      rides_count: ridesCount,
+      co2_saved_kg: co2Saved,
+      money_saved: moneySaved,
       is_verified: true,
       avatar_url: user.profilePic || null,
       vehicle: vehicle || null,
