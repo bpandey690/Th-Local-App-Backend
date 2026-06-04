@@ -11,9 +11,10 @@ export class ChatGateway {
 
     wss.on('connection', (ws, request) => {
       const url = request.url || '';
-      const parts = url.split('/');
+      const urlPath = url.split('?')[0];
+      const parts = urlPath.split('/');
 
-      if (url.startsWith('/api/ws/notifications/')) {
+      if (urlPath.startsWith('/api/ws/notifications/')) {
         const userId = parts[parts.length - 1];
         this.chatService.registerNotificationClient(userId, ws as any);
         
@@ -23,12 +24,17 @@ export class ChatGateway {
         return;
       }
 
-      const chatId = parts[parts.length - 1];
-      this.chatService.registerChatClient(chatId, ws as any);
+      if (urlPath.startsWith('/api/ws/chat/')) {
+        const chatParts = urlPath.replace('/api/ws/chat/', '').split('/');
+        const chatId = chatParts[0];
+        const userId = chatParts[1] || null;
+        this.chatService.registerChatClient(chatId, userId, ws as any);
 
-      ws.on('close', () => {
-        this.chatService.removeChatClient(chatId, ws as any);
-      });
+        ws.on('close', () => {
+          this.chatService.removeChatClient(chatId, userId, ws as any);
+        });
+        return;
+      }
     });
 
     server.on('upgrade', (request: any, socket: any, head: any) => {

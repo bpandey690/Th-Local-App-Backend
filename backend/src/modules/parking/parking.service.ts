@@ -220,12 +220,18 @@ export class ParkingService implements OnModuleInit {
     }
 
     // Notify the visitor who made the booking request
-    this.chatService.notifyUserWs(booking.userId, 'parking_booking_status_updated', {
-      id: updatedBooking.id,
-      spotId: updatedBooking.spotId,
-      spotName: booking.spot.spotName,
-      status: updatedBooking.status,
-    });
+    await this.chatService.sendNotificationToUser(
+      booking.userId,
+      `Parking Booking ${status}`,
+      `Your parking booking status has been updated to ${status.toLowerCase()}.`,
+      'parking_booking_status_updated',
+      {
+        id: updatedBooking.id,
+        spotId: updatedBooking.spotId,
+        spotName: booking.spot.spotName,
+        status: updatedBooking.status,
+      }
+    );
 
     return updatedBooking;
   }
@@ -282,11 +288,20 @@ export class ParkingService implements OnModuleInit {
       price: number;
     },
   ) {
+    const spot = await this.prisma.parkingSpot.findUnique({
+      where: { id: dto.spotId },
+    });
+
+    if (!spot) {
+      throw new NotFoundException('Spot does not exist in the master grid.');
+    }
+
+    let calculatedPrice = dto.price;
+
     // If an availabilityId is supplied, check that it exists, matches, and is not already booked
     if (dto.availabilityId) {
       const avail = await this.prisma.parkingAvailability.findUnique({
         where: { id: dto.availabilityId },
-        include: { spot: true },
       });
 
       if (!avail) {
@@ -295,6 +310,30 @@ export class ParkingService implements OnModuleInit {
 
       if (avail.isBooked) {
         throw new BadRequestException('This slot has already been reserved.');
+      }
+
+      if (avail.slotType === dto.slotType) {
+        calculatedPrice = avail.price;
+      } else {
+        if (dto.slotType === ParkingSlotType.HOURLY) {
+          calculatedPrice = spot.priceHourly;
+        } else if (dto.slotType === ParkingSlotType.DAILY) {
+          calculatedPrice = spot.priceDaily;
+        } else if (dto.slotType === ParkingSlotType.WEEKLY) {
+          calculatedPrice = spot.priceWeekly;
+        } else if (dto.slotType === ParkingSlotType.MONTHLY) {
+          calculatedPrice = spot.priceMonthly;
+        }
+      }
+    } else {
+      if (dto.slotType === ParkingSlotType.HOURLY) {
+        calculatedPrice = spot.priceHourly;
+      } else if (dto.slotType === ParkingSlotType.DAILY) {
+        calculatedPrice = spot.priceDaily;
+      } else if (dto.slotType === ParkingSlotType.WEEKLY) {
+        calculatedPrice = spot.priceWeekly;
+      } else if (dto.slotType === ParkingSlotType.MONTHLY) {
+        calculatedPrice = spot.priceMonthly;
       }
     }
 
@@ -308,16 +347,12 @@ export class ParkingService implements OnModuleInit {
         slotType: dto.slotType,
         startTime: new Date(dto.startTime),
         endTime: new Date(dto.endTime),
-        price: dto.price,
+        price: calculatedPrice,
         status: BookingStatus.REQUESTED,
       },
     });
 
     // Notify the spot owner in real-time
-    const spot = await this.prisma.parkingSpot.findUnique({
-      where: { id: dto.spotId },
-      select: { ownerId: true, spotName: true },
-    });
 
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
@@ -325,14 +360,20 @@ export class ParkingService implements OnModuleInit {
     });
 
     if (spot && spot.ownerId) {
-      this.chatService.notifyUserWs(spot.ownerId, 'new_parking_booking_request', {
-        id: booking.id,
-        spotId: booking.spotId,
-        spotName: spot.spotName,
-        visitorName: user?.name || 'A visitor',
-        date: booking.date,
-        status: booking.status,
-      });
+      await this.chatService.sendNotificationToUser(
+        spot.ownerId,
+        'New Parking Request',
+        `You have a new parking booking request for spot ${spot.spotName}.`,
+        'new_parking_booking_request',
+        {
+          id: booking.id,
+          spotId: booking.spotId,
+          spotName: spot.spotName,
+          visitorName: user?.name || 'A visitor',
+          date: booking.date,
+          status: booking.status,
+        }
+      );
     }
 
     return booking;

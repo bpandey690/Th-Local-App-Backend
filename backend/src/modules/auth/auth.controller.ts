@@ -309,6 +309,20 @@ export class AuthController {
     return await this.formatUser(updatedUser);
   }
 
+  @Patch('fcm-token')
+  @UseGuards(FirebaseAuthGuard)
+  async updateFcmToken(@Request() req: any, @Body() body: { fcmToken: string }) {
+    const { fcmToken } = body;
+    console.log(`[AUTH] Updating FCM token for user ${req.user.id}:`, fcmToken);
+
+    await this.prisma.user.update({
+      where: { id: req.user.id },
+      data: { fcmToken: fcmToken || null },
+    });
+
+    return { success: true };
+  }
+
   @Post('delete-account')
   @UseGuards(FirebaseAuthGuard)
   async deleteAccount(@Request() req: any) {

@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Param, Request, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, Request, UseGuards, Patch } from '@nestjs/common';
 import { FirebaseAuthGuard } from '../auth/firebase-auth.guard';
 import { ChatService } from './chat.service';
 
@@ -24,5 +24,14 @@ export class ChatController {
     @Request() req: any,
   ) {
     return this.chatService.postMessage(chatId, body.text, req.user.id);
+  }
+
+  @Patch(':chat_id/read')
+  async markRead(
+    @Param('chat_id') chatId: string,
+    @Request() req: any,
+  ) {
+    await this.chatService.markChatAsRead(chatId, req.user.id);
+    return { success: true };
   }
 }

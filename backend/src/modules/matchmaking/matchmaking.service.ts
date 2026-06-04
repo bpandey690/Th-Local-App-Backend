@@ -255,7 +255,13 @@ export class MatchmakingService {
 
     // Notify the driver in real-time
     this.gateway.notifyUser(ride.driverId, 'new_ride_request', newRequest);
-    this.chatService.notifyUserWs(ride.driverId, 'new_ride_request', newRequest);
+    await this.chatService.sendNotificationToUser(
+      ride.driverId,
+      'New Ride Request',
+      'You have received a new ride request.',
+      'new_ride_request',
+      newRequest
+    );
 
     return newRequest;
   }
@@ -318,7 +324,13 @@ export class MatchmakingService {
 
     // Notify the rider in real-time
     this.gateway.notifyUser(req.riderId, 'ride_request_updated', updatedReq);
-    this.chatService.notifyUserWs(req.riderId, 'ride_request_updated', updatedReq);
+    await this.chatService.sendNotificationToUser(
+      req.riderId,
+      `Ride Request ${status}`,
+      `Your ride request status has been updated to ${status.toLowerCase()}.`,
+      'ride_request_updated',
+      updatedReq
+    );
 
     return updatedReq;
   }

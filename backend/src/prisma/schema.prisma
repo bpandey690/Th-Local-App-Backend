@@ -84,6 +84,7 @@ model User {
   passwordHash  String?
   role          String        @default("passenger")
   gender        String?
+  fcmToken      String?
 
   createdAt     DateTime      @default(now())
   updatedAt     DateTime      @updatedAt
@@ -115,6 +116,7 @@ model Message {
   id        String   @id @default(uuid())
   chatId    String   // rideId:userId or similar
   text      String
+  status    String   @default("SENT") // SENT, DELIVERED, READ
   createdAt DateTime @default(now())
 
   senderId  String
@@ -362,4 +364,14 @@ model VerificationCode {
   createdAt   DateTime @default(now())
 
   @@index([phoneNumber])
+}
+
+model PendingNotification {
+  id        String   @id @default(uuid())
+  userId    String
+  type      String
+  payload   String   // JSON stringified payload
+  createdAt DateTime @default(now())
+
+  @@index([userId])
 }

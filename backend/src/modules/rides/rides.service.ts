@@ -517,16 +517,22 @@ export class RidesService {
       data: { status: RideStatus.REQUESTED }
     });
 
-    this.chatService.notifyUserWs(ride.driverId, 'new_ride_request', {
-      id: requestId.id,
-      rideId: ride.id,
-      riderName: requestId.rider.name,
-      riderStartName: requestId.riderStartName,
-      riderEndName: requestId.riderEndName,
-      riderStartTime: requestId.riderStartTime,
-      status: requestId.status,
-      fareCents: calculatedFareCents
-    });
+    await this.chatService.sendNotificationToUser(
+      ride.driverId,
+      'New Ride Booking Request',
+      `You have a new ride booking request from ${requestId.rider.name}.`,
+      'new_ride_request',
+      {
+        id: requestId.id,
+        rideId: ride.id,
+        riderName: requestId.rider.name,
+        riderStartName: requestId.riderStartName,
+        riderEndName: requestId.riderEndName,
+        riderStartTime: requestId.riderStartTime,
+        status: requestId.status,
+        fareCents: calculatedFareCents
+      }
+    );
 
     return { ok: true, chat_id: `chat_${requestId.id}` };
   }
