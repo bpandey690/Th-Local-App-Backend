@@ -1,4 +1,4 @@
-import { Controller, Post, Body, UnauthorizedException, Get, Request, UseGuards, Patch } from '@nestjs/common';
+import { Controller, Post, Body, UnauthorizedException, Get, Request, UseGuards, Patch, BadRequestException } from '@nestjs/common';
 import * as bcrypt from 'bcryptjs';
 import * as jwt from 'jsonwebtoken';
 import { randomUUID } from 'crypto';
@@ -296,11 +296,34 @@ export class AuthController {
     const { name, phoneNumber, avatarUrl, profilePic, gender } = body;
     console.log(`[AUTH] Updating profile for user ${req.user.id}:`, body);
 
+    let cleanPhone = undefined;
+    if (phoneNumber !== undefined && phoneNumber !== null) {
+      if (phoneNumber === '') {
+        cleanPhone = null;
+      } else {
+        cleanPhone = phoneNumber.trim();
+        if (!cleanPhone.startsWith('+')) {
+          cleanPhone = `+91${cleanPhone}`;
+        }
+
+        // Check if phone number is already registered to ANOTHER user
+        const existing = await this.prisma.user.findFirst({
+          where: {
+            phoneNumber: cleanPhone,
+            id: { not: req.user.id }
+          }
+        });
+        if (existing) {
+          throw new BadRequestException('This phone number is already registered with another account');
+        }
+      }
+    }
+
     const updatedUser = await this.prisma.user.update({
       where: { id: req.user.id },
       data: {
         name: name !== undefined ? name : undefined,
-        phoneNumber: phoneNumber !== undefined ? phoneNumber : undefined,
+        phoneNumber: cleanPhone !== undefined ? cleanPhone : undefined,
         profilePic: (avatarUrl || profilePic) !== undefined ? (avatarUrl || profilePic) : undefined,
         gender: gender !== undefined ? gender : undefined,
       }
