@@ -8,7 +8,7 @@ export class ParkingService implements OnModuleInit {
   constructor(
     private readonly prisma: PrismaService,
     private readonly chatService: ChatService,
-  ) {}
+  ) { }
 
   // Automatically seed the 90 spots on startup if they don't exist
   async onModuleInit() {
@@ -79,7 +79,7 @@ export class ParkingService implements OnModuleInit {
     }
 
     if (spot.ownerId) {
-      throw new BadRequestException('This spot is already registered by an owner.');
+      throw new BadRequestException('This spot is already registered by other owner.');
     }
 
     // Assign owner and auto-approve in development environment for immediate testing
