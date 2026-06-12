@@ -260,6 +260,19 @@ export class AuthController {
           where: { firebaseUid: decodedToken.uid },
         });
 
+        if (!user && decodedToken.email) {
+          user = await this.prisma.user.findUnique({
+            where: { email: decodedToken.email },
+          });
+          if (user) {
+            user = await this.prisma.user.update({
+              where: { id: user.id },
+              data: { firebaseUid: decodedToken.uid }
+            });
+            console.log(`[AUTH] Linked existing user ${decodedToken.email} with firebaseUid ${decodedToken.uid} in google-route`);
+          }
+        }
+
         if (!user) {
           user = await this.prisma.user.create({
             data: {

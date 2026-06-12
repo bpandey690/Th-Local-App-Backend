@@ -40,6 +40,19 @@ export class FirebaseAuthGuard implements CanActivate {
           where: { firebaseUid: decodedToken.uid }
         });
         
+        if (!user && decodedToken.email) {
+          user = await prisma.user.findUnique({
+            where: { email: decodedToken.email }
+          });
+          if (user) {
+            user = await prisma.user.update({
+              where: { id: user.id },
+              data: { firebaseUid: decodedToken.uid }
+            });
+            console.log(`[AUTH] Linked existing user ${decodedToken.email} with firebaseUid ${decodedToken.uid}`);
+          }
+        }
+
         if (!user) {
           // Extract custom headers sent during first-time signup sync
           const requestedRole = request.headers['x-user-role'] || 'passenger';
@@ -55,6 +68,7 @@ export class FirebaseAuthGuard implements CanActivate {
               role: requestedRole,
             }
           });
+          console.log(`[AUTH] Created user ${decodedToken.email || decodedToken.uid} in DB`);
         }
       }
 
