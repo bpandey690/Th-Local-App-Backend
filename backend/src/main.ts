@@ -16,13 +16,23 @@ import * as admin from 'firebase-admin';
 // Initialize Firebase Admin (Using Default credentials or Env Variables)
 // In production, you'll need the service account credentials in env.
 if (process.env.FIREBASE_PROJECT_ID) {
-  admin.initializeApp({
-    credential: admin.credential.cert({
-      projectId: process.env.FIREBASE_PROJECT_ID,
-      clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-      privateKey: process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
-    }),
-  });
+  try {
+    const rawKey = process.env.FIREBASE_PRIVATE_KEY;
+    const privateKey = rawKey
+      ? rawKey.replace(/\\n/g, '\n').replace(/^"|"$/g, '').trim()
+      : undefined;
+
+    admin.initializeApp({
+      credential: admin.credential.cert({
+        projectId: process.env.FIREBASE_PROJECT_ID,
+        clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
+        privateKey: privateKey,
+      }),
+    });
+    console.log("[FIREBASE] Admin SDK successfully initialized!");
+  } catch (err: any) {
+    console.error("[FIREBASE] Error initializing Admin SDK certificate:", err?.message || err);
+  }
 } else {
   // Try to initialize using application default credentials (if GOOGLE_APPLICATION_CREDENTIALS is set)
   try {
