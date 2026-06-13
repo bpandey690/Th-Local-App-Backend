@@ -13,11 +13,16 @@ export class FirebaseAuthGuard implements CanActivate {
     const request = context.switchToHttp().getRequest();
     const authHeader = request.headers.authorization;
     
+    console.log("[AUTH GUARD] canActivate triggered. Headers:", JSON.stringify(request.headers));
+    
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      console.warn("[AUTH GUARD] Access denied: No Bearer token provided in Authorization header");
       throw new UnauthorizedException('No token provided');
     }
 
     const token = authHeader.split('Bearer ')[1];
+    const tokenPreview = token ? `${token.substring(0, 15)}...${token.substring(token.length - 15)}` : 'null';
+    console.log(`[AUTH GUARD] Received Token: ${tokenPreview}`);
     
     try {
       let decodedLocalToken: any = null;
@@ -25,60 +30,82 @@ export class FirebaseAuthGuard implements CanActivate {
 
       // Check if it's a local JWT
       try {
+        console.log("[AUTH GUARD] Attempting local JWT verification with JWT_SECRET...");
         decodedLocalToken = jwt.verify(token, JWT_SECRET);
-      } catch (e) {
-        // Not a local token, might be a firebase token
+        console.log("[AUTH GUARD] Local JWT verified successfully. Decoded payload:", JSON.stringify(decodedLocalToken));
+      } catch (e: any) {
+        console.log("[AUTH GUARD] Token is not a local JWT. Error details:", e?.message || e);
       }
 
       if (decodedLocalToken && decodedLocalToken.sub) {
+        console.log(`[AUTH GUARD] Looking up user by ID (local JWT sub): ${decodedLocalToken.sub}`);
         user = await prisma.user.findUnique({ where: { id: decodedLocalToken.sub } });
-      } else if (USE_FIREBASE_AUTH) {
-        // Fallback to Firebase
-        const decodedToken = await admin.auth().verifyIdToken(token);
-        
-        user = await prisma.user.findUnique({
-          where: { firebaseUid: decodedToken.uid }
-        });
-        
-        if (!user && decodedToken.email) {
+        console.log(`[AUTH GUARD] User lookup result: ${user ? 'FOUND (ID: ' + user.id + ')' : 'NOT FOUND'}`);
+      } else {
+        console.log(`[AUTH GUARD] Fallback to Firebase Auth. USE_FIREBASE_AUTH value is: ${USE_FIREBASE_AUTH}`);
+        if (USE_FIREBASE_AUTH) {
+          console.log("[AUTH GUARD] Calling admin.auth().verifyIdToken...");
+          const decodedToken = await admin.auth().verifyIdToken(token);
+          console.log(`[AUTH GUARD] Firebase ID Token successfully verified. Decoded token info: UID: ${decodedToken.uid}, Email: ${decodedToken.email}, Name: ${decodedToken.name}`);
+          
+          console.log(`[AUTH GUARD] Looking up database user by firebaseUid: ${decodedToken.uid}`);
           user = await prisma.user.findUnique({
-            where: { email: decodedToken.email }
+            where: { firebaseUid: decodedToken.uid }
           });
-          if (user) {
-            user = await prisma.user.update({
-              where: { id: user.id },
-              data: { firebaseUid: decodedToken.uid }
+          console.log(`[AUTH GUARD] User lookup by firebaseUid result: ${user ? 'FOUND (ID: ' + user.id + ', Role: ' + user.role + ')' : 'NOT FOUND'}`);
+          
+          if (!user && decodedToken.email) {
+            console.log(`[AUTH GUARD] User not found by firebaseUid. Looking up by email instead: ${decodedToken.email}`);
+            user = await prisma.user.findUnique({
+              where: { email: decodedToken.email }
             });
-            console.log(`[AUTH] Linked existing user ${decodedToken.email} with firebaseUid ${decodedToken.uid}`);
-          }
-        }
-
-        if (!user) {
-          // Extract custom headers sent during first-time signup sync
-          const requestedRole = request.headers['x-user-role'] || 'passenger';
-          const requestedName = request.headers['x-user-name'] || decodedToken.name || decodedToken.phone_number || 'Carpool User';
-
-          user = await prisma.user.create({
-            data: {
-              firebaseUid: decodedToken.uid,
-              email: decodedToken.email || null,
-              phoneNumber: decodedToken.phone_number || null,
-              name: requestedName,
-              profilePic: decodedToken.picture || null,
-              role: requestedRole,
+            if (user) {
+              console.log(`[AUTH GUARD] User found by email: ${user.email} (ID: ${user.id}). Linking firebaseUid: ${decodedToken.uid}...`);
+              user = await prisma.user.update({
+                where: { id: user.id },
+                data: { firebaseUid: decodedToken.uid }
+              });
+              console.log(`[AUTH GUARD] Successfully linked firebaseUid to existing user: ID: ${user.id}`);
+            } else {
+              console.log("[AUTH GUARD] User not found by email in DB.");
             }
-          });
-          console.log(`[AUTH] Created user ${decodedToken.email || decodedToken.uid} in DB`);
+          }
+
+          if (!user) {
+            console.log("[AUTH GUARD] User does not exist. Creating new user record...");
+            // Extract custom headers sent during first-time signup sync
+            const requestedRole = request.headers['x-user-role'] || 'passenger';
+            const requestedName = request.headers['x-user-name'] || decodedToken.name || decodedToken.phone_number || 'Carpool User';
+
+            console.log(`[AUTH GUARD] Attempting user creation: name=${requestedName}, role=${requestedRole}, email=${decodedToken.email}`);
+            user = await prisma.user.create({
+              data: {
+                firebaseUid: decodedToken.uid,
+                email: decodedToken.email || null,
+                phoneNumber: decodedToken.phone_number || null,
+                name: requestedName,
+                profilePic: decodedToken.picture || null,
+                role: requestedRole,
+              }
+            });
+            console.log(`[AUTH GUARD] Successfully created new user: ID: ${user.id}, Email: ${user.email}`);
+          }
+        } else {
+          console.warn("[AUTH GUARD] USE_FIREBASE_AUTH is false. Skipping Firebase token verification.");
         }
       }
 
-      if (!user) throw new UnauthorizedException('User not found');
+      if (!user) {
+        console.error("[AUTH GUARD] Guard check failed: No user found or created.");
+        throw new UnauthorizedException('User not found');
+      }
 
       // 3. Attach user object to the request so controllers can use req.user
       request.user = user;
+      console.log(`[AUTH GUARD] Authentication SUCCESS. Request user attached: ID: ${user.id}, Email: ${user.email}`);
       return true;
     } catch (error: any) {
-      console.error("Auth error details:", error?.message || error);
+      console.error("[AUTH GUARD] EXCEPTION occurred inside guard check details:", error?.stack || error?.message || error);
       throw new UnauthorizedException('Invalid or expired token');
     }
   }

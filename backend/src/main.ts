@@ -43,6 +43,27 @@ if (process.env.FIREBASE_PROJECT_ID) {
 }
 
 async function bootstrap() {
+  const port = process.env.PORT ? Number(process.env.PORT) : 3000;
+  
+  console.log("=========================================");
+  console.log("       BACKEND ENVIRONMENT CONFIG        ");
+  console.log("=========================================");
+  console.log("PORT:", port);
+  console.log("NODE_ENV:", process.env.NODE_ENV);
+  const dbUrl = process.env.DATABASE_URL || "";
+  console.log("DATABASE_URL:", dbUrl ? dbUrl.replace(/:[^:@]+@/, ':****@') : "NOT SET");
+  console.log("USE_FIREBASE_AUTH:", process.env.USE_FIREBASE_AUTH);
+  console.log("FIREBASE_PROJECT_ID:", process.env.FIREBASE_PROJECT_ID);
+  console.log("FIREBASE_CLIENT_EMAIL:", process.env.FIREBASE_CLIENT_EMAIL);
+  const privateKey = process.env.FIREBASE_PRIVATE_KEY || "";
+  console.log("FIREBASE_PRIVATE_KEY SET?:", privateKey ? "YES (Length: " + privateKey.length + ")" : "NO");
+  if (privateKey) {
+    console.log("FIREBASE_PRIVATE_KEY STARTS WITH:", JSON.stringify(privateKey.substring(0, 30)));
+    console.log("FIREBASE_PRIVATE_KEY ENDS WITH:", JSON.stringify(privateKey.substring(privateKey.length - 20)));
+  }
+  console.log("JWT_SECRET SET?:", process.env.JWT_SECRET ? "YES" : "NO");
+  console.log("=========================================");
+
   const app = await NestFactory.create(AppModule, { cors: true });
   app.useGlobalInterceptors(new LoggingInterceptor());
   
@@ -62,7 +83,6 @@ async function bootstrap() {
     }),
   );
 
-  const port = process.env.PORT ? Number(process.env.PORT) : 3000;
   const server = await app.listen(port);
   
   // Retrieve the modular WebSocket gateway and bind it to the HTTP server
