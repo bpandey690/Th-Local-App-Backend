@@ -131,6 +131,18 @@ export class ChatService {
 
   async getRecipientId(chatId: string, senderId: string): Promise<string | null> {
     try {
+      if (chatId.startsWith('buddy_')) {
+        const parts = chatId.split('_');
+        const buddyId = parts[1];
+        const driverId = parts[2];
+        const buddyRequest = await this.prisma.buddyRequest.findUnique({
+          where: { id: buddyId }
+        });
+        if (buddyRequest) {
+          return senderId === buddyRequest.riderId ? driverId : buddyRequest.riderId;
+        }
+      }
+
       const id = chatId.replace(/^chat_/, '');
 
       // Try RideRequest

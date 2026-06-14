@@ -95,6 +95,8 @@ model User {
   // A user can request many rides (as a rider)
   rideRequests  RideRequest[] @relation("RiderRequests")
 
+  buddyRequests BuddyRequest[] @relation("RiderBuddyRequests")
+
   // Messages sent by this user
   messages      Message[]
 
@@ -374,4 +376,23 @@ model PendingNotification {
   createdAt DateTime @default(now())
 
   @@index([userId])
+}
+
+model BuddyRequest {
+  id             String   @id @default(uuid())
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  riderId        String
+  rider          User     @relation("RiderBuddyRequests", fields: [riderId], references: [id], onDelete: Cascade)
+
+  startPlaceName String
+  endPlaceName   String
+  startTime      DateTime
+
+  startPoint     Unsupported("geometry(Point,4326)")?
+  endPoint       Unsupported("geometry(Point,4326)")?
+
+  seatsNeeded    Int      @default(1)
+  status         String   @default("OPEN") // "OPEN" | "ACCEPTED" | "CANCELLED"
 }

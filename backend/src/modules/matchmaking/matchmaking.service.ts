@@ -334,5 +334,61 @@ export class MatchmakingService {
 
     return updatedReq;
   }
+
+  async createBuddyRequest(body: any, riderId: string) {
+    const { startPlaceName, endPlaceName, startCoords, endCoords, startTime, seatsNeeded } = body;
+    const departureTime = new Date(startTime);
+    if (isNaN(departureTime.valueOf())) {
+      throw new BadRequestException('Invalid startTime');
+    }
+
+    const startWkt = startCoords && startCoords.length === 2 ? pointWkt({ lng: startCoords[0], lat: startCoords[1] }) : null;
+    const endWkt = endCoords && endCoords.length === 2 ? pointWkt({ lng: endCoords[0], lat: endCoords[1] }) : null;
+
+    const buddyRequest = await this.prisma.buddyRequest.create({
+      data: {
+        riderId,
+        startPlaceName,
+        endPlaceName,
+        startTime: departureTime.toISOString(),
+        seatsNeeded: Number(seatsNeeded) || 1,
+        status: 'OPEN',
+      }
+    });
+
+    if (startWkt && endWkt) {
+      await this.prisma.$executeRaw(Prisma.sql`
+        UPDATE "BuddyRequest"
+        SET "startPoint" = ST_SetSRID(ST_GeomFromText(${startWkt}), 4326),
+            "endPoint" = ST_SetSRID(ST_GeomFromText(${endWkt}), 4326)
+        WHERE id = ${buddyRequest.id}
+      `);
+    }
+
+    return buddyRequest;
+  }
+
+  async listBuddyRequests(userId: string) {
+    return this.prisma.buddyRequest.findMany({
+      where: {
+        riderId: { not: userId },
+        status: 'OPEN',
+        startTime: { gte: new Date() }
+      },
+      include: {
+        rider: {
+          select: {
+            id: true,
+            name: true,
+            profilePic: true,
+            gender: true
+          }
+        }
+      },
+      orderBy: {
+        createdAt: 'desc'
+      }
+    });
+  }
 }
 
